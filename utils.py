@@ -7,23 +7,17 @@ def sigmoid_derivative(x):
     s = sigmoid(x)
     return s * (1 - s)
 
-def relu(x):
-    return np.maximum(0, x)
-
-def relu_derivative(x):
-    return np.where(x > 0, 1, 0)
-
-def leaky_relu(x, alpha=0.01):
+def leaky_relu(x, alpha=0.02):
     return np.where(x > 0, x, alpha * x)
 
-def leaky_relu_derivative(x, alpha=0.01):
+def leaky_relu_derivative(x, alpha=0.02):
     return np.where(x > 0, 1, alpha)
 
 def tanh(x):
     return np.tanh(x)
 
 def tanh_derivative(x):
-    return 1 - x ** 2
+    return 1 - np.tanh(x) ** 2
 
 def binary_cross_entropy(y_pred, y_true):
     epsilon = 1e-12
@@ -35,5 +29,10 @@ def binary_cross_entropy_derivative(y_pred, y_true):
     y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
     return (y_pred - y_true) / (y_pred * (1 - y_pred))
 
-def generate_noise(a, b, shape):
-    return np.random.normal(a, b, size=shape)
+def initialize_weights(shape):
+    return np.random.randn(*shape) * 0.01
+
+def xavier_initialization(shape):
+    n_in, n_out = shape
+    limit = np.sqrt(6 / (n_in + n_out))
+    return np.random.uniform(-limit, limit, shape)
