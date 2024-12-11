@@ -1,51 +1,89 @@
 import numpy as np
-from utils import xavier_initialization, leaky_relu, tanh, tanh_derivative, leaky_relu_derivative
-
+from utils import xavier_initialization, relu, relu_derivative, leaky_relu, tanh, tanh_derivative, leaky_relu_derivative, sigmoid, sigmoid_derivative
+from conv import ConvTranspose2D
 class Generator:
-    def __init__(self, input_size, hidden_sizes, output_size):
-        self.weights = []
-        self.biases = []
-        layers_sizes = [input_size] + hidden_sizes + [output_size]
-        for i in range(len(layers_sizes) - 1):
-            w = xavier_initialization((layers_sizes[i], layers_sizes[i + 1]))
-            b = np.zeros((1, layers_sizes[i + 1]))
-            self.weights.append(w)
-            self.biases.append(b)
+    def __init__(self, noise_dim=100):
+        self.noise_dim = noise_dim
+        # FC: noise_dim -> 512*4*4
+        scale = 0.02
+        self.W_fc = np.random.randn(noise_dim, 512*4*4)*scale
+        self.b_fc = np.zeros((1, 512*4*4))
+
+        # ConvTranspose warstwy
+        self.deconv1 = ConvTranspose2D(512, 256, 4, 2, 1)
+        self.deconv2 = ConvTranspose2D(256, 128, 4, 2, 1)
+        self.deconv3 = ConvTranspose2D(128, 3, 4, 2, 1)
+
+        self.cache = {}
 
     def forward(self, z):
-        self.activations = [z]  # post-aktywacje
-        self.pre_activations = []  # pre-aktywacje
-        x = z
-        for i in range(len(self.weights)):
-            pre_activation = np.dot(x, self.weights[i]) + self.biases[i]
-            self.pre_activations.append(pre_activation)
-            if i == len(self.weights) - 1:
-                # output layer: tanh
-                x = tanh(pre_activation)
-            else:
-                # hidden layers: leaky relu
-                x = leaky_relu(pre_activation)
-            self.activations.append(x)
-        return x
+        # FC
+        fc_out = z.dot(self.W_fc) + self.b_fc
+        fc_out_reshaped = fc_out.reshape(z.shape[0], 512, 4, 4)
+        self.cache['fc_out'] = fc_out
+        self.cache['z'] = z
 
-    def backward(self, grad_output):
-        grads_w = []
-        grads_b = []
-        grad_input = grad_output * tanh_derivative(self.pre_activations[-1])
-        
-        for i in reversed(range(len(self.weights))):
-            grad_w = np.dot(self.activations[i].T, grad_input) / grad_input.shape[0]
-            grad_b = np.sum(grad_input, axis=0, keepdims=True) / grad_input.shape[0]
-            grads_w.insert(0, grad_w)
-            grads_b.insert(0, grad_b)
-            
-            if i > 0:
-                grad_input = np.dot(grad_input, self.weights[i].T)
-                grad_input *= leaky_relu_derivative(self.pre_activations[i - 1])
-            else:
-                grad_input = np.dot(grad_input, self.weights[i].T)
-        return grads_w, grads_b
-    
-    def generate(self, batch_size):
-        z = np.random.randn(batch_size, self.weights[0].shape[0])
-        return self.forward(z)
+        # deconv1
+        out1 = self.deconv1.forward(fc_out_reshaped)
+        # ReLU
+        self.cache['out1_pre'] = out1
+        out1 = relu(out1)
+
+        # deconv2
+        out2 = self.deconv2.forward(out1)
+        self.cache['out2_pre'] = out2
+        out2 = relu(out2)
+
+        # deconv3
+        out3 = self.deconv3.forward(out2)
+        self.cache['out3_pre'] = out3
+        out3 = tanh(out3)
+
+        self.cache['out1_act'] = out1
+        self.cache['out2_act'] = out2
+        self.cache['out3_act'] = out3
+        return out3
+
+    def backward(self, dout):
+        # dout = dL/d(G_out), gdzie G_out = tanh(out3_pre)
+        # dtanh/dx = 1 - tanh^2(x)
+        out3_pre = self.cache['out3_pre']
+        dpre3 = dout * tanh_derivative(out3_pre)
+
+        dx3, dW3, db3 = self.deconv3.backward(dpre3)
+
+        # out2_act = relu(out2_pre)
+        out2_pre = self.cache['out2_pre']
+        dout2 = dx3 * relu_derivative(out2_pre)
+        dx2, dW2, db2 = self.deconv2.backward(dout2)
+
+        # out1_act = relu(out1_pre)
+        out1_pre = self.cache['out1_pre']
+        dout1 = dx2 * relu_derivative(out1_pre)
+        dx1, dW1, db1 = self.deconv1.backward(dout1)
+
+        # dx1 = gradient w stosunku do fc_out_reshaped
+        # FC backward
+        z = self.cache['z']
+        fc_out = self.cache['fc_out'] # (N, 512*4*4)
+        dfc = dx1.reshape(z.shape[0], 512*4*4)
+        dW_fc = z.T.dot(dfc)
+        db_fc = np.sum(dfc, axis=0, keepdims=True)
+        dZ = dfc.dot(self.W_fc.T)
+
+        return dZ, (dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3)
+
+    def update_params(self, grads, lr=0.0002):
+        dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3 = grads
+        self.W_fc -= lr * dW_fc
+        self.b_fc -= lr * db_fc
+
+        # Update convtranspose params
+        self.deconv1.W -= lr * dW1
+        self.deconv1.b -= lr * db1
+
+        self.deconv2.W -= lr * dW2
+        self.deconv2.b -= lr * db2
+
+        self.deconv3.W -= lr * dW3
+        self.deconv3.b -= lr * db3

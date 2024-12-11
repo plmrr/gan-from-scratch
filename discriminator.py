@@ -1,54 +1,83 @@
 import numpy as np
-from utils import xavier_initialization, leaky_relu, sigmoid, leaky_relu_derivative, sigmoid_derivative
+from utils import xavier_initialization, leaky_relu, sigmoid, leaky_relu_derivative, sigmoid_derivative, he_initialization
+from utils import tanh, tanh_derivative
+from conv import Conv2D
 
 class Discriminator:
-    def __init__(self, input_size, hidden_sizes):
-        self.weights = []
-        self.biases = []
-        layers_sizes = [input_size] + hidden_sizes + [1] # output is 1 value
-        for i in range(len(layers_sizes) - 1):
-            w = xavier_initialization((layers_sizes[i], layers_sizes[i + 1]))
-            b = np.zeros((1, layers_sizes[i + 1]))
-            self.weights.append(w)
-            self.biases.append(b)
+    def __init__(self):
+        # Conv layers
+        self.conv1 = Conv2D(3, 64, 4, 2, 1)    # (3,32,32)->(64,16,16)
+        self.conv2 = Conv2D(64,128,4,2,1)      # (64,16,16)->(128,8,8)
+        self.conv3 = Conv2D(128,256,4,2,1)     # (128,8,8)->(256,4,4)
+
+        # FC
+        scale = 0.02
+        self.W_fc = np.random.randn(256*4*4,1)*scale
+        self.b_fc = np.zeros((1,1))
+
+        self.cache = {}
 
     def forward(self, x):
-        x = x.reshape(x.shape[0], -1)
-        self.activations = [x]  # post-aktywacje
-        self.pre_activations = []  # pre-aktywacje
-        for i in range(len(self.weights)):
-            pre_activation = np.dot(x, self.weights[i]) + self.biases[i]
-            self.pre_activations.append(pre_activation)
-            if i == len(self.weights) - 1:
-                # output layer: sigmoid
-                x = sigmoid(pre_activation)
-            else:
-                # hidden layers: leaky relu
-                x = leaky_relu(pre_activation)
-            self.activations.append(x)
-        return x
+        # x: (N,3,32,32)
+        out1 = self.conv1.forward(x)
+        self.cache['out1_pre'] = out1
+        out1 = leaky_relu(out1, 0.2)
 
-    def backward(self, grad_output):
-        grads_w = []
-        grads_b = []
-        grad_input = grad_output * sigmoid_derivative(self.pre_activations[-1])
-        
-        for i in reversed(range(len(self.weights))):
-            # print(f"layer {i}:")
-            # print(f"grad_input.shape = {grad_input.shape}")
-            # print(f"self.activations[{i}].shape = {self.activations[i].shape}")
-            grad_w = np.dot(self.activations[i].T, grad_input) / grad_input.shape[0]
-            grad_b = np.sum(grad_input, axis=0, keepdims=True) / grad_input.shape[0]
-            grads_w.insert(0, grad_w)
-            grads_b.insert(0, grad_b)
-            
-            if i > 0:
-                grad_input = np.dot(grad_input, self.weights[i].T)
-                grad_input *= leaky_relu_derivative(self.pre_activations[i - 1])
-            else:
-                grad_input = np.dot(grad_input, self.weights[i].T)
-        # print(f"Desc backward function returns: grads_w ({len(grads_w)}), grads_b ({len(grads_b)}), grad_input ({grad_input.shape})")
-        return grads_w, grads_b, grad_input
+        out2 = self.conv2.forward(out1)
+        self.cache['out2_pre'] = out2
+        out2 = leaky_relu(out2, 0.2)
 
-    def classify(self, images):
-        return self.forward(images)
+        out3 = self.conv3.forward(out2)
+        self.cache['out3_pre'] = out3
+        out3 = leaky_relu(out3,0.2)
+
+        out3_flat = out3.reshape(x.shape[0], -1)
+        self.cache['out3_flat'] = out3_flat
+
+        logits = out3_flat.dot(self.W_fc) + self.b_fc
+        self.cache['logits'] = logits
+        out = sigmoid(logits)
+        self.cache['out'] = out
+        return out
+
+    def backward(self, dout):
+        # dout = dL/d(sigmoid)
+        logits = self.cache['logits']
+        dsig = dout * sigmoid_derivative(logits) # chain rule
+
+        out3_flat = self.cache['out3_flat']
+        dW_fc = out3_flat.T.dot(dsig)
+        db_fc = np.sum(dsig, axis=0, keepdims=True)
+
+        dflat = dsig.dot(self.W_fc.T)
+        # reshape do (N,256,4,4)
+        N = out3_flat.shape[0]
+        dconv3_out = dflat.reshape(N,256,4,4)
+
+        out3_pre = self.cache['out3_pre']
+        dconv3_out_pre = dconv3_out * leaky_relu_derivative(out3_pre,0.2)
+        dx3, dW3, db3 = self.conv3.backward(dconv3_out_pre)
+
+        out2_pre = self.cache['out2_pre']
+        dconv2_out = dx3 * leaky_relu_derivative(out2_pre,0.2)
+        dx2, dW2, db2 = self.conv2.backward(dconv2_out)
+
+        out1_pre = self.cache['out1_pre']
+        dconv1_out = dx2 * leaky_relu_derivative(out1_pre,0.2)
+        dx1, dW1, db1 = self.conv1.backward(dconv1_out)
+
+        return dx1, (dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3)
+
+    def update_params(self, grads, lr=0.0002):
+        dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3 = grads
+        self.W_fc -= lr * dW_fc
+        self.b_fc -= lr * db_fc
+
+        self.conv1.W -= lr * dW1
+        self.conv1.b -= lr * db1
+
+        self.conv2.W -= lr * dW2
+        self.conv2.b -= lr * db2
+
+        self.conv3.W -= lr * dW3
+        self.conv3.b -= lr * db3
