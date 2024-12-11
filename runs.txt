@@ -16,7 +16,7 @@ beta1 = 0.5
 beta2 = 0.999
 
 run 3
-grad clipping
+grad clipping 10
 noise_dim = 100
 batch_size = 64
 learning_rate = 0.0002
