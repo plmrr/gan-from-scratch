@@ -9,10 +9,13 @@ class Generator:
         self.W_fc = np.random.randn(noise_dim, 512*4*4)*scale
         self.b_fc = np.zeros((1, 512*4*4))
 
+        # kernel 4x4
+        # stride 2
+        # padding 1
         # ConvTranspose warstwy
-        self.deconv1 = ConvTranspose2D(512, 256, 4, 2, 1)
-        self.deconv2 = ConvTranspose2D(256, 128, 4, 2, 1)
-        self.deconv3 = ConvTranspose2D(128, 3, 4, 2, 1)
+        self.deconv1 = ConvTranspose2D(512, 256, 4, 2, 1) # 256 8 8 
+        self.deconv2 = ConvTranspose2D(256, 128, 4, 2, 1) # 128 16 16
+        self.deconv3 = ConvTranspose2D(128, 3, 4, 2, 1) # 3 32 32
 
         self.cache = {}
 
@@ -62,7 +65,6 @@ class Generator:
         dout1 = dx2 * relu_derivative(out1_pre)
         dx1, dW1, db1 = self.deconv1.backward(dout1)
 
-        # dx1 = gradient w stosunku do fc_out_reshaped
         # FC backward
         z = self.cache['z']
         fc_out = self.cache['fc_out'] # (N, 512*4*4)
@@ -72,18 +74,3 @@ class Generator:
         dZ = dfc.dot(self.W_fc.T)
 
         return dZ, (dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3)
-
-    def update_params(self, grads, lr=0.0002):
-        dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3 = grads
-        self.W_fc -= lr * dW_fc
-        self.b_fc -= lr * db_fc
-
-        # Update convtranspose params
-        self.deconv1.W -= lr * dW1
-        self.deconv1.b -= lr * db1
-
-        self.deconv2.W -= lr * dW2
-        self.deconv2.b -= lr * db2
-
-        self.deconv3.W -= lr * dW3
-        self.deconv3.b -= lr * db3

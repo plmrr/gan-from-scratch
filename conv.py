@@ -34,9 +34,6 @@ def col2im(col, input_shape, filter_h, filter_w, stride=1, pad=0):
 
 class Conv2D:
     def __init__(self, in_channels, out_channels, filter_size=3, stride=1, pad=1):
-        # Xavier lub He init (np. zaleznie od aktywacji)
-        # W: (out_channels, in_channels, filter_size, filter_size)
-        # b: (out_channels,)
         scale = np.sqrt(2.0/(in_channels*filter_size*filter_size))
         self.W = np.random.randn(out_channels, in_channels, filter_size, filter_size)*scale
         self.b = np.zeros((out_channels,))
@@ -78,57 +75,34 @@ class Conv2D:
 
 class ConvTranspose2D:
     def __init__(self, in_channels, out_channels, filter_size=4, stride=2, pad=1):
-        """
-        in_channels: liczba kanałów na wejściu
-        out_channels: liczba kanałów na wyjściu
-        filter_size: wysokość/szerokość filtru (zakładamy kwadratowe filtry)
-        stride, pad: analogicznie jak w zwykłej konwolucji
-        """
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.filter_size = filter_size
         self.stride = stride
         self.pad = pad
 
-        # Inicjalizacja wag He-initialization
         fan_in = in_channels * filter_size * filter_size
         scale = np.sqrt(2.0/fan_in)
-        # Uwaga: W transposed conv: W ma kształt (in_channels, out_channels, filter_h, filter_w)
         self.W = np.random.randn(in_channels, out_channels, filter_size, filter_size)*scale
         self.b = np.zeros((out_channels,))
         self.cache = None
 
     def forward(self, x):
-        """
-        x: (N, in_channels, H_in, W_in)
-        Zwraca: (N, out_channels, H_out, W_out)
-        Gdzie:
-        H_out = (H_in - 1)*stride - 2*pad + filter_size
-        W_out = (W_in - 1)*stride - 2*pad + filter_size
-        """
         N, C, H, W = x.shape
         filter_h, filter_w = self.filter_size, self.filter_size
 
         H_out = (H - 1)*self.stride - 2*self.pad + filter_h
         W_out = (W - 1)*self.stride - 2*self.pad + filter_w
 
-        # Krok 1: "Upsample" wejście przez wstawienie zer
-        # Tworzymy powiększoną siatkę
         H_up = (H - 1)*self.stride + 1
         W_up = (W - 1)*self.stride + 1
         x_up = np.zeros((N, C, H_up, W_up), dtype=x.dtype)
-        # Umieszczamy wartości x w x_up
         x_up[:, :, ::self.stride, ::self.stride] = x
 
-        # Teraz wykonujemy zwykłą konwolucję na x_up z odpowiednim pad
-        # Tutaj potrzebny pad, aby uzyskać H_out, W_out
-        # W transposed conv potrzebujemy pad = filter_size - 1 - self.pad
-        # aby symulować odpowiedni zasięg filtrów.
         pad_conv = filter_h - 1 - self.pad
 
         # im2col
         col = im2col(x_up, filter_h, filter_w, stride=1, pad=pad_conv)
-        # W reshape: (in_channels, out_channels, filter_h, filter_w) -> (C*filter_h*filter_w, out_channels)
         W_col = self.W.reshape(self.in_channels*filter_h*filter_w, self.out_channels)
 
         out = np.dot(col, W_col) + self.b
@@ -138,14 +112,6 @@ class ConvTranspose2D:
         return out
 
     def backward(self, dout):
-        """
-        dout: (N, out_channels, H_out, W_out)
-
-        Musimy odwrócić operacje:
-        1. dW i db z dot product
-        2. col2im na dX_up
-        3. Wyciągnięcie gradientu do oryginalnego x z x_up
-        """
         x, x_up, col, W_col, H_out, W_out, pad_conv = self.cache
         N, C, H, W = x.shape
         filter_h, filter_w = self.filter_size, self.filter_size
@@ -156,7 +122,6 @@ class ConvTranspose2D:
         # dW
         dW = np.dot(col.T, dout_reshaped)
         dW = dW.reshape(self.in_channels, filter_h, filter_w, self.out_channels)
-        # Musimy transponować z powrotem do (in_channels, out_channels, filter_h, filter_w)
         dW = dW.transpose(0,3,1,2)
 
         # db
@@ -166,7 +131,6 @@ class ConvTranspose2D:
         dcol = np.dot(dout_reshaped, W_col.T)  # (N*H_out*W_out, C*filter_h*filter_w)
         dx_up = col2im(dcol, x_up.shape, filter_h, filter_w, stride=1, pad=pad_conv)
 
-        # Teraz musimy wyciągnąć dx z dx_up, pamiętając o wstawionych zerach
         dx = np.zeros_like(x)
         dx[:, :, :, :] = dx_up[:, :, ::self.stride, ::self.stride]
 

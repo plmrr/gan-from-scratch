@@ -5,10 +5,12 @@ from conv import Conv2D
 
 class Discriminator:
     def __init__(self):
-        # Conv layers
-        self.conv1 = Conv2D(3, 64, 4, 2, 1)    # (3,32,32)->(64,16,16)
-        self.conv2 = Conv2D(64,128,4,2,1)      # (64,16,16)->(128,8,8)
-        self.conv3 = Conv2D(128,256,4,2,1)     # (128,8,8)->(256,4,4)
+        # kernel 4x4
+        # stride 2
+        # padding 1
+        self.conv1 = Conv2D(3, 64, 4, 2, 1)    # 64 16 16
+        self.conv2 = Conv2D(64,128,4,2,1)      # 128 8 8 
+        self.conv3 = Conv2D(128,256,4,2,1)     # 256 4 4
 
         # FC
         scale = 0.02
@@ -43,7 +45,7 @@ class Discriminator:
     def backward(self, dout):
         # dout = dL/d(sigmoid)
         logits = self.cache['logits']
-        dsig = dout * sigmoid_derivative(logits) # chain rule
+        dsig = dout * sigmoid_derivative(logits)
 
         out3_flat = self.cache['out3_flat']
         dW_fc = out3_flat.T.dot(dsig)
@@ -67,17 +69,3 @@ class Discriminator:
         dx1, dW1, db1 = self.conv1.backward(dconv1_out)
 
         return dx1, (dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3)
-
-    def update_params(self, grads, lr=0.0002):
-        dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3 = grads
-        self.W_fc -= lr * dW_fc
-        self.b_fc -= lr * db_fc
-
-        self.conv1.W -= lr * dW1
-        self.conv1.b -= lr * db1
-
-        self.conv2.W -= lr * dW2
-        self.conv2.b -= lr * db2
-
-        self.conv3.W -= lr * dW3
-        self.conv3.b -= lr * db3
