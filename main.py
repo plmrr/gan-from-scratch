@@ -112,7 +112,7 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
         noise = np.random.normal(0, 1, size=(batch_size, noise_dim))
         fake_images = generator.forward(noise)  # (batch_size,3,32,32)
 
-        if epoch % 1 == 0:
+        if epoch % 5 == 0:
             save_generated_image(fake_images, epoch)
 
         real_labels = np.ones((batch_size, 1))
