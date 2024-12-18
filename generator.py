@@ -1,5 +1,5 @@
 import numpy as np
-from utils import xavier_initialization, relu, relu_derivative, leaky_relu, tanh, tanh_derivative, leaky_relu_derivative, sigmoid, sigmoid_derivative
+from utils import relu, relu_derivative, tanh, tanh_derivative
 from conv import ConvTranspose2D
 class Generator:
     def __init__(self, noise_dim=100):

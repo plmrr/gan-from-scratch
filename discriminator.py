@@ -1,6 +1,5 @@
 import numpy as np
-from utils import xavier_initialization, leaky_relu, sigmoid, leaky_relu_derivative, sigmoid_derivative, he_initialization
-from utils import tanh, tanh_derivative
+from utils import leaky_relu, sigmoid, leaky_relu_derivative, sigmoid_derivative
 from conv import Conv2D
 
 class Discriminator:
