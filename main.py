@@ -4,6 +4,7 @@ import os
 import pickle
 from generator import Generator
 from discriminator import Discriminator
+from adam import AdamOpt
 from utils import binary_cross_entropy, binary_cross_entropy_derivative
 
 def unpickle(file):
@@ -33,15 +34,15 @@ def save_generated_image(image_data, epoch, output_dir="outputFiles"):
         os.makedirs(output_dir)
     
     # image_data: (N,3,32,32)
-    image_data = np.clip((image_data + 1)*127.5, 0, 255).astype(np.uint8)
+    image_data = ((image_data + 1) * 127.5).astype(np.uint8)
     image_data = image_data.transpose(0,2,3,1) # back to (N,32,32,3)
 
     for i, img_array in enumerate(image_data):
-        if i == 10:
+        if i == 0: # save only one image for now
             img = Image.fromarray(img_array)
-            img.save(os.path.join(output_dir, f"epoch_{epoch}_sample_{i}.png"))
+            img.save(os.path.join(output_dir, f"2epoch_{epoch}_sample_{i}.png"))
 
-def clip_gradients(grads, max_norm=5.0):
+def clip_gradients(grads, max_norm=10.0):
     total_norm = 0.0
     for g in grads:
         total_norm += np.sum(g**2)
@@ -51,36 +52,7 @@ def clip_gradients(grads, max_norm=5.0):
         grads = [g * scale for g in grads]
     return grads
 
-# ------ADAM-----------
-class AdamOpt:
-    def __init__(self, lr=0.0002, beta1=0.9, beta2=0.999):
-        self.lr = lr
-        self.beta1 = beta1
-        self.beta2 = beta2
-        self.epsilon = 1e-8
-        self.m = []
-        self.v = []
-        self.t = 0
-
-    def step(self, params, grads):
-        if not self.m:
-            self.m = [np.zeros_like(p) for p in params]
-            self.v = [np.zeros_like(p) for p in params]
-
-        self.t += 1
-        lr_t = self.lr * np.sqrt(1 - self.beta2 ** self.t) / (1 - self.beta1 ** self.t)
-
-        for i in range(len(params)):
-            self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * grads[i]
-            self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * (grads[i] ** 2)
-
-            m_hat = self.m[i] / (1 - self.beta1 ** self.t)
-            v_hat = self.v[i] / (1 - self.beta2 ** self.t)
-
-            params[i] -= lr_t * m_hat / (np.sqrt(v_hat) + self.epsilon)
-
 def get_gen_params(gen):
-    # (dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3)
     return [
         gen.W_fc,      # W_fc
         gen.b_fc,      # b_fc
@@ -102,9 +74,7 @@ def set_gen_params(gen, params):
     gen.deconv3.W = params[6]
     gen.deconv3.b = params[7]
 
-
 def get_disc_params(disc):
-    # dW_fc(0), db_fc(1), dW1(2), db1(3), dW2(4), db2(5), dW3(6), db3(7)
     return [
         disc.W_fc,    # (4096,1)
         disc.b_fc,    # (1,1)
@@ -137,6 +107,7 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
         # transpozycja do (N,C,H,W)
         real_images = real_images.transpose(0,3,1,2)  # (batch_size,3,32,32)
 
+        # -------------DISCRIMINATOR---------------
         # fake image 
         noise = np.random.normal(0, 1, size=(batch_size, noise_dim))
         fake_images = generator.forward(noise)  # (batch_size,3,32,32)
@@ -148,8 +119,8 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
         fake_labels = np.zeros((batch_size, 1))
         
         # real + fake
-        combined_images = np.concatenate([real_images, fake_images], axis=0) # (2*batch_size,3,32,32)
-        combined_labels = np.concatenate([real_labels, fake_labels], axis=0) # (2*batch_size,1)
+        combined_images = np.concatenate([real_images, fake_images], axis=0)
+        combined_labels = np.concatenate([real_labels, fake_labels], axis=0)
 
         # shuffle real + fake
         shuffle_indices = np.random.permutation(combined_images.shape[0])
@@ -157,7 +128,7 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
         combined_labels = combined_labels[shuffle_indices]
 
         # disc forward
-        predictions = discriminator.forward(combined_images)  # (2*batch_size,1)
+        predictions = discriminator.forward(combined_images)
 
         # disc loss
         disc_loss = binary_cross_entropy(combined_labels, predictions)
@@ -173,13 +144,13 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
 
         # update disc
         disc_grads = list(dgrads_D) # tuple to list
-        disc_grads = clip_gradients(disc_grads, max_norm=5.0)
+        disc_grads = clip_gradients(disc_grads, max_norm=20.0)
         disc_optimizer.step(disc_params, disc_grads)
         set_disc_params(discriminator, disc_params)
 
-        if epoch >= -1:
-        # for _ in range(1):
-            noise = np.random.normal(0,1,(batch_size, noise_dim))
+        # ----------------GENERATOR-------------------
+        if epoch >= -1: # pretrain discriminator if needed
+            noise = np.random.normal(0, 1, (batch_size, noise_dim))
             fake_images = generator.forward(noise)  # (N,3,32,32)
             predictions = discriminator.forward(fake_images) # (N,1)
 
@@ -190,7 +161,6 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
             
             # disc backprop
             dx_GD, dgrads_fake = discriminator.backward(grad_output)
-            # dgrads_fake nie aktualizujemy D tutaj, tylko bierzemy dx_GD
 
             # gen backprop
             dZ_gen, dgrads_G = generator.backward(dx_GD)
@@ -198,7 +168,7 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
             # dgrads_G = (dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3)
             gen_params = get_gen_params(generator)
             gen_grads = list(dgrads_G)
-            gen_grads = clip_gradients(gen_grads, max_norm=5.0)
+            gen_grads = clip_gradients(gen_grads, max_norm=20.0)
             gen_optimizer.step(gen_params, gen_grads)
             set_gen_params(generator, gen_params)
 
@@ -210,13 +180,14 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
             print(f"Epoch {epoch}: Discriminator gradient norm: {disc_grad_norm:.6e}")
             print(f"Epoch {epoch}/{epochs} - Gen loss: {round(gen_loss, 4) if epoch >= -1 else 'N/A'} - Disc loss: {round(disc_loss, 4)}") # if epoch>20 else 'N/A'
 
+
 data, labels = load_cifar10_data()
 print(f"Train data shape: {data.shape}, min: {data.min()}, max: {data.max()}")
 
-noise_dim = 100
-batch_size = 64
+noise_dim = 128
+batch_size = 32
 learning_rate = 0.0002
-epochs = 100
+epochs = 200
 beta1 = 0.5
 beta2 = 0.999
 
