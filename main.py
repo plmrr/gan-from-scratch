@@ -187,7 +187,7 @@ print(f"Train data shape: {data.shape}, min: {data.min()}, max: {data.max()}")
 noise_dim = 128
 batch_size = 32
 learning_rate = 0.0002
-epochs = 200
+epochs = 100
 beta1 = 0.5
 beta2 = 0.999
 
