@@ -7,7 +7,7 @@ class Generator:
         # FC: noise_dim -> 512*4*4
         scale = 0.02
         self.W_fc = np.random.randn(noise_dim, 512*4*4)*scale
-        self.b_fc = np.zeros((1, 512*4*4))
+        self.b_fc = np.random.randn(1, 512*4*4) * scale
 
         # kernel 4x4
         # stride 2
