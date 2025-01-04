@@ -14,8 +14,8 @@ class Discriminator:
         # FC
         scale = 0.02
         self.W_fc = np.random.randn(256*4*4,1)*scale
-        self.b_fc = np.random.randn(1, 1) * scale
-
+        # self.b_fc = np.random.randn(1, 1) * scale
+        self.b_fc = np.zeros((1,1))
         self.cache = {}
 
     def forward(self, x):
