@@ -5,7 +5,7 @@ import pickle
 from generator import Generator
 from discriminator import Discriminator
 from adam import AdamOpt
-from utils import binary_cross_entropy, binary_cross_entropy_derivative
+from utils import binary_cross_entropy, binary_cross_entropy_derivative, generator_loss, generator_loss_derivative
 
 def unpickle(file):
     with open(file, 'rb') as fo:
@@ -155,9 +155,10 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
             predictions = discriminator.forward(fake_images) # (N,1)
 
             # gen loss
-            gen_loss = binary_cross_entropy(real_labels, predictions)
-
-            grad_output = binary_cross_entropy_derivative(real_labels, predictions)
+            # gen_loss = binary_cross_entropy(real_labels, predictions)
+            # grad_output = binary_cross_entropy_derivative(real_labels, predictions)
+            gen_loss = generator_loss(predictions)
+            grad_output = generator_loss_derivative(predictions)
             
             # disc backprop
             dx_GD, dgrads_fake = discriminator.backward(grad_output)

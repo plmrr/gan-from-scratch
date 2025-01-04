@@ -33,6 +33,14 @@ def binary_cross_entropy_derivative(y_pred, y_true):
     epsilon = 1e-8
     return (y_pred - y_true) / ((y_pred * (1 - y_pred)) + epsilon)
 
+def generator_loss(predictions):
+    epsilon = 1e-8
+    return -np.mean(np.log(predictions + epsilon))
+
+def generator_loss_derivative(predictions):
+    epsilon = 1e-8
+    return -1 / (predictions + epsilon)
+
 def initialize_weights(shape):
     return np.random.randn(*shape) * 0.01
 
