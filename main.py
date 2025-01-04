@@ -54,14 +54,18 @@ def clip_gradients(grads, max_norm=10.0):
 
 def get_gen_params(gen):
     return [
-        gen.W_fc,      # W_fc
-        gen.b_fc,      # b_fc
-        gen.deconv1.W, # W1
-        gen.deconv1.b, # b1
-        gen.deconv2.W, # W2
-        gen.deconv2.b, # b2
-        gen.deconv3.W, # W3
-        gen.deconv3.b  # b3
+        gen.W_fc,
+        gen.b_fc,
+        gen.deconv1.W,
+        gen.deconv1.b,
+        gen.deconv2.W,
+        gen.deconv2.b,
+        gen.deconv3.W,
+        gen.deconv3.b,
+        gen.bn1.gamma,
+        gen.bn1.beta,
+        gen.bn2.gamma,
+        gen.bn2.beta
     ]
 
 def set_gen_params(gen, params):
@@ -73,17 +77,25 @@ def set_gen_params(gen, params):
     gen.deconv2.b = params[5]
     gen.deconv3.W = params[6]
     gen.deconv3.b = params[7]
+    gen.bn1.gamma = params[8]
+    gen.bn1.beta  = params[9]
+    gen.bn2.gamma = params[10]
+    gen.bn2.beta  = params[11]
 
 def get_disc_params(disc):
     return [
-        disc.W_fc,    # (4096,1)
-        disc.b_fc,    # (1,1)
-        disc.conv1.W, # (64,3,4,4)
-        disc.conv1.b, # (64,)
-        disc.conv2.W, # (128,64,4,4)
-        disc.conv2.b, # (128,)
-        disc.conv3.W, # (256,128,4,4)
-        disc.conv3.b  # (256,)
+        disc.W_fc,          # 0
+        disc.b_fc,          # 1
+        disc.conv1.W,       # 2
+        disc.conv1.b,       # 3
+        disc.conv2.W,       # 4
+        disc.conv2.b,       # 5
+        disc.conv3.W,       # 6
+        disc.conv3.b,       # 7
+        disc.bn2.gamma,     # 8
+        disc.bn2.beta,      # 9
+        disc.bn3.gamma,     # 10
+        disc.bn3.beta       # 11
     ]
 
 def set_disc_params(disc, params):
@@ -95,6 +107,10 @@ def set_disc_params(disc, params):
     disc.conv2.b = params[5]
     disc.conv3.W = params[6]
     disc.conv3.b = params[7]
+    disc.bn2.gamma = params[8]
+    disc.bn2.beta  = params[9]
+    disc.bn3.gamma = params[10]
+    disc.bn3.beta  = params[11]
 
 def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_dim, learning_rate, beta1, beta2):
     gen_optimizer = AdamOpt(lr=learning_rate, beta1=beta1, beta2=beta2)
@@ -110,12 +126,12 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
         # -------------DISCRIMINATOR---------------
         # fake image 
         noise = np.random.normal(0, 1, size=(batch_size, noise_dim))
-        fake_images = generator.forward(noise)  # (batch_size,3,32,32)
+        fake_images = generator.forward(noise, training=True)  # (batch_size,3,32,32)
 
         if epoch % 5 == 0:
             save_generated_image(fake_images, epoch)
 
-        real_labels = np.ones((batch_size, 1))
+        real_labels = np.ones((batch_size, 1)) # * 0.9
         fake_labels = np.zeros((batch_size, 1))
         
         # real + fake
@@ -128,7 +144,7 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
         combined_labels = combined_labels[shuffle_indices]
 
         # disc forward
-        predictions = discriminator.forward(combined_images)
+        predictions = discriminator.forward(combined_images, training=True)
 
         # disc loss
         disc_loss = binary_cross_entropy(combined_labels, predictions)
@@ -144,15 +160,15 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
 
         # update disc
         disc_grads = list(dgrads_D) # tuple to list
-        disc_grads = clip_gradients(disc_grads, max_norm=20.0)
+        # disc_grads = clip_gradients(disc_grads, max_norm=50.0)
         disc_optimizer.step(disc_params, disc_grads)
         set_disc_params(discriminator, disc_params)
 
         # ----------------GENERATOR-------------------
         if epoch >= -1: # pretrain discriminator if needed
             noise = np.random.normal(0, 1, (batch_size, noise_dim))
-            fake_images = generator.forward(noise)  # (N,3,32,32)
-            predictions = discriminator.forward(fake_images) # (N,1)
+            fake_images = generator.forward(noise, training=True)  # (N,3,32,32)
+            predictions = discriminator.forward(fake_images, training=True) # (N,1)
 
             # gen loss
             # gen_loss = binary_cross_entropy(real_labels, predictions)
@@ -169,7 +185,7 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
             # dgrads_G = (dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3)
             gen_params = get_gen_params(generator)
             gen_grads = list(dgrads_G)
-            gen_grads = clip_gradients(gen_grads, max_norm=20.0)
+            # gen_grads = clip_gradients(gen_grads, max_norm=20.0)
             gen_optimizer.step(gen_params, gen_grads)
             set_gen_params(generator, gen_params)
 
@@ -186,7 +202,7 @@ data, labels = load_cifar10_data()
 print(f"Train data shape: {data.shape}, min: {data.min()}, max: {data.max()}")
 
 noise_dim = 128
-batch_size = 32
+batch_size = 64
 learning_rate = 0.0002
 epochs = 100
 beta1 = 0.5
