@@ -12,7 +12,7 @@ def unpickle(file):
         data_dict = pickle.load(fo, encoding='bytes')
     return data_dict
 
-def load_cifar10_data():
+def load_cifar10_data(filter_class=None):
     data_batches = []
     labels = []
     
@@ -27,6 +27,12 @@ def load_cifar10_data():
     
     # normalize data to [-1, 1]
     data = (data / 127.5) - 1.0
+    
+    if filter_class is not None:
+        mask = labels == filter_class
+        data = data[mask]
+        labels = labels[mask]
+    
     return data, labels
 
 def save_generated_image(image_data, epoch, output_dir="outputFiles"):
@@ -84,18 +90,18 @@ def set_gen_params(gen, params):
 
 def get_disc_params(disc):
     return [
-        disc.W_fc,          # 0
-        disc.b_fc,          # 1
-        disc.conv1.W,       # 2
-        disc.conv1.b,       # 3
-        disc.conv2.W,       # 4
-        disc.conv2.b,       # 5
-        disc.conv3.W,       # 6
-        disc.conv3.b,       # 7
-        disc.bn2.gamma,     # 8
-        disc.bn2.beta,      # 9
-        disc.bn3.gamma,     # 10
-        disc.bn3.beta       # 11
+        disc.W_fc,
+        disc.b_fc,
+        disc.conv1.W,
+        disc.conv1.b,
+        disc.conv2.W,
+        disc.conv2.b,
+        disc.conv3.W,
+        disc.conv3.b,
+        disc.bn2.gamma,
+        disc.bn2.beta,
+        disc.bn3.gamma,
+        disc.bn3.beta
     ]
 
 def set_disc_params(disc, params):
@@ -107,8 +113,8 @@ def set_disc_params(disc, params):
     disc.conv2.b = params[5]
     disc.conv3.W = params[6]
     disc.conv3.b = params[7]
-    disc.bn2.gamma = params[8]
-    disc.bn2.beta  = params[9]
+    disc.bn2.gamma = params[6]
+    disc.bn2.beta  = params[7]
     disc.bn3.gamma = params[10]
     disc.bn3.beta  = params[11]
 
@@ -131,8 +137,8 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
         if epoch % 5 == 0:
             save_generated_image(fake_images, epoch)
 
-        real_labels = np.ones((batch_size, 1)) # * 0.9
-        fake_labels = np.zeros((batch_size, 1))
+        real_labels = np.ones((batch_size, 1)) * 0.9
+        fake_labels = np.zeros((batch_size, 1)) + 0.1
         
         # real + fake
         combined_images = np.concatenate([real_images, fake_images], axis=0)
@@ -166,28 +172,29 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
 
         # ----------------GENERATOR-------------------
         if epoch >= -1: # pretrain discriminator if needed
-            noise = np.random.normal(0, 1, (batch_size, noise_dim))
-            fake_images = generator.forward(noise, training=True)  # (N,3,32,32)
-            predictions = discriminator.forward(fake_images, training=True) # (N,1)
+            for _ in range(1):
+                noise = np.random.normal(0, 1, (batch_size, noise_dim))
+                fake_images = generator.forward(noise, training=True)  # (N,3,32,32)
+                predictions = discriminator.forward(fake_images, training=True) # (N,1)
 
-            # gen loss
-            # gen_loss = binary_cross_entropy(real_labels, predictions)
-            # grad_output = binary_cross_entropy_derivative(real_labels, predictions)
-            gen_loss = generator_loss(predictions)
-            grad_output = generator_loss_derivative(predictions)
-            
-            # disc backprop
-            dx_GD, dgrads_fake = discriminator.backward(grad_output)
+                # gen loss
+                # gen_loss = binary_cross_entropy(real_labels, predictions)
+                # grad_output = binary_cross_entropy_derivative(real_labels, predictions)
+                gen_loss = generator_loss(predictions)
+                grad_output = generator_loss_derivative(predictions)
+                
+                # disc backprop
+                dx_GD, dgrads_fake = discriminator.backward(grad_output)
 
-            # gen backprop
-            dZ_gen, dgrads_G = generator.backward(dx_GD)
+                # gen backprop
+                dZ_gen, dgrads_G = generator.backward(dx_GD)
 
-            # dgrads_G = (dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3)
-            gen_params = get_gen_params(generator)
-            gen_grads = list(dgrads_G)
-            # gen_grads = clip_gradients(gen_grads, max_norm=20.0)
-            gen_optimizer.step(gen_params, gen_grads)
-            set_gen_params(generator, gen_params)
+                # dgrads_G = (dW_fc, db_fc, dW1, db1, dW2, db2, dW3, db3)
+                gen_params = get_gen_params(generator)
+                gen_grads = list(dgrads_G)
+                # gen_grads = clip_gradients(gen_grads, max_norm=20.0)
+                gen_optimizer.step(gen_params, gen_grads)
+                set_gen_params(generator, gen_params)
 
         if epoch % 1 == 0:
             if epoch >= -1:
@@ -198,13 +205,13 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
             print(f"Epoch {epoch}/{epochs} - Gen loss: {round(gen_loss, 4) if epoch >= -1 else 'N/A'} - Disc loss: {round(disc_loss, 4)}") # if epoch>20 else 'N/A'
 
 
-data, labels = load_cifar10_data()
+data, labels = load_cifar10_data(filter_class=0)
 print(f"Train data shape: {data.shape}, min: {data.min()}, max: {data.max()}")
 
 noise_dim = 128
 batch_size = 64
 learning_rate = 0.0002
-epochs = 100
+epochs = 200
 beta1 = 0.5
 beta2 = 0.999
 
