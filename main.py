@@ -119,8 +119,8 @@ def set_disc_params(disc, params):
     disc.bn3.beta  = params[11]
 
 def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_dim, learning_rate, beta1, beta2):
-    gen_optimizer = AdamOpt(lr=learning_rate, beta1=beta1, beta2=beta2)
-    disc_optimizer = AdamOpt(lr=learning_rate, beta1=beta1, beta2=beta2)
+    gen_optimizer = AdamOpt(lr=0.0002, beta1=beta1, beta2=beta2)
+    disc_optimizer = AdamOpt(lr=0.00008, beta1=beta1, beta2=beta2)
     
     for epoch in range(epochs):
         # random batch
