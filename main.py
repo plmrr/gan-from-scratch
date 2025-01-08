@@ -113,8 +113,8 @@ def set_disc_params(disc, params):
     disc.conv2.b = params[5]
     disc.conv3.W = params[6]
     disc.conv3.b = params[7]
-    disc.bn2.gamma = params[6]
-    disc.bn2.beta  = params[7]
+    disc.bn2.gamma = params[8]
+    disc.bn2.beta  = params[9]
     disc.bn3.gamma = params[10]
     disc.bn3.beta  = params[11]
 
