@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image
 import os
+import matplotlib.pyplot as plt
 import pickle
 from generator import Generator
 from discriminator import Discriminator
@@ -47,6 +48,17 @@ def save_generated_image(image_data, epoch, output_dir="outputFiles"):
         if i == 0: # save only one image for now
             img = Image.fromarray(img_array)
             img.save(os.path.join(output_dir, f"2epoch_{epoch}_sample_{i}.png"))
+
+def plot_losses(gen_losses, disc_losses):
+    plt.figure(figsize=(10, 5))
+    plt.plot(gen_losses, label="Gen Loss")
+    plt.plot(disc_losses, label="Disc Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.title("GAN Training Losses")
+    plt.show()
+    plt.savefig('gan_training_losses.png')
 
 def clip_gradients(grads, max_norm=10.0):
     total_norm = 0.0
@@ -120,7 +132,9 @@ def set_disc_params(disc, params):
 
 def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_dim, learning_rate, beta1, beta2):
     gen_optimizer = AdamOpt(lr=0.0002, beta1=beta1, beta2=beta2)
-    disc_optimizer = AdamOpt(lr=0.00008, beta1=beta1, beta2=beta2)
+    disc_optimizer = AdamOpt(lr=0.00015, beta1=beta1, beta2=beta2)
+    gen_losses = []
+    disc_losses = []
     
     for epoch in range(epochs):
         # random batch
@@ -137,8 +151,8 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
         if epoch % 5 == 0:
             save_generated_image(fake_images, epoch)
 
-        real_labels = np.ones((batch_size, 1)) * 0.9
-        fake_labels = np.zeros((batch_size, 1)) + 0.1
+        real_labels = np.ones((batch_size, 1)) * 0.95
+        fake_labels = np.zeros((batch_size, 1)) + 0.05
         
         # real + fake
         combined_images = np.concatenate([real_images, fake_images], axis=0)
@@ -154,6 +168,7 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
 
         # disc loss
         disc_loss = binary_cross_entropy(combined_labels, predictions)
+        disc_losses.append(disc_loss)
 
         # dL/dout
         grad_output = binary_cross_entropy_derivative(combined_labels, predictions)
@@ -178,10 +193,11 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
                 predictions = discriminator.forward(fake_images, training=True) # (N,1)
 
                 # gen loss
-                # gen_loss = binary_cross_entropy(real_labels, predictions)
-                # grad_output = binary_cross_entropy_derivative(real_labels, predictions)
-                gen_loss = generator_loss(predictions)
-                grad_output = generator_loss_derivative(predictions)
+                gen_loss = binary_cross_entropy(real_labels, predictions)
+                grad_output = binary_cross_entropy_derivative(real_labels, predictions)
+                # gen_loss = generator_loss(predictions)
+                # grad_output = generator_loss_derivative(predictions)
+                gen_losses.append(gen_loss)
                 
                 # disc backprop
                 dx_GD, dgrads_fake = discriminator.backward(grad_output)
@@ -203,7 +219,7 @@ def train_gan(generator, discriminator, train_data, epochs, batch_size, noise_di
             disc_grad_norm = np.mean([np.linalg.norm(g) for g in disc_grads])
             print(f"Epoch {epoch}: Discriminator gradient norm: {disc_grad_norm:.6e}")
             print(f"Epoch {epoch}/{epochs} - Gen loss: {round(gen_loss, 4) if epoch >= -1 else 'N/A'} - Disc loss: {round(disc_loss, 4)}") # if epoch>20 else 'N/A'
-
+    plot_losses(gen_losses, disc_losses)
 
 data, labels = load_cifar10_data(filter_class=0)
 print(f"Train data shape: {data.shape}, min: {data.min()}, max: {data.max()}")
