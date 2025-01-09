@@ -2,6 +2,7 @@ import numpy as np
 from utils import leaky_relu, sigmoid, leaky_relu_derivative, sigmoid_derivative
 from conv import Conv2D
 from batchnorm import BatchNorm2d
+from dropout import Dropout
 
 class Discriminator:
     def __init__(self):
@@ -11,6 +12,10 @@ class Discriminator:
         self.conv3 = Conv2D(128,256, 4, 2, 1)   # out: (256,4,4)
         self.bn2 = BatchNorm2d(128)
         self.bn3 = BatchNorm2d(256)
+
+        # Dropout layers
+        self.dropout2 = Dropout(p=0.3)
+        self.dropout3 = Dropout(p=0.3)
 
         # FC
         scale = 0.02
@@ -27,21 +32,25 @@ class Discriminator:
 
         out2 = self.conv2.forward(out1)           # (N,128,8,8)
         self.cache['out2_conv'] = out2
-        # BN2 -> LeakyReLU
+        # BN2 -> LeakyReLU -> Dropout
         out2_bn = self.bn2.forward(out2, training=training)
         self.cache['out2_bn'] = out2_bn
         out2_act = leaky_relu(out2_bn, 0.2)
         self.cache['out2_act'] = out2_act
+        out2_drop = self.dropout2.forward(out2_act, training=training)
+        self.cache['out2_drop'] = out2_drop
 
-        out3 = self.conv3.forward(out2_act)       # (N,256,4,4)
+        out3 = self.conv3.forward(out2_drop)       # (N,256,4,4)
         self.cache['out3_conv'] = out3
-        # BN3 -> LeakyReLU
+        # BN3 -> LeakyReLU -> Dropout
         out3_bn = self.bn3.forward(out3, training=training)
         self.cache['out3_bn'] = out3_bn
         out3_act = leaky_relu(out3_bn, 0.2)
         self.cache['out3_act'] = out3_act
+        out3_drop = self.dropout3.forward(out3_act, training=training)
+        self.cache['out3_drop'] = out3_drop
 
-        out3_flat = out3_act.reshape(x.shape[0], -1)
+        out3_flat = out3_drop.reshape(x.shape[0], -1)
         self.cache['out3_flat'] = out3_flat
 
         logits = out3_flat.dot(self.W_fc) + self.b_fc
@@ -62,12 +71,12 @@ class Discriminator:
         dflat = dsig.dot(self.W_fc.T)             # (N,4096)
         dconv3_out = dflat.reshape(-1,256,4,4)    # (N,256,4,4)
 
-        # WARSTWA 3: LeakyReLU -> BN3 -> Conv3
+        # WARSTWA 3: Dropout -> LeakyReLU -> BN3 -> Conv3
         out3_bn = self.cache['out3_bn']           # (N,256,4,4)  PRZED LeakyReLU
-        out3_conv = self.cache['out3_conv']       # (N,256,4,4)  PRZED BN3
+        out3_drop = self.cache['out3_drop']       # PO Dropout
 
-        # d(LeakyReLU)
-        d_lrelu3 = dconv3_out * leaky_relu_derivative(out3_bn, 0.2)  # (N,256,4,4)
+        d_drop3 = self.dropout3.backward(dconv3_out)
+        d_lrelu3 = d_drop3 * leaky_relu_derivative(out3_bn, 0.2)  # (N,256,4,4)
 
         # d(BN3)
         dx_bn3, dgamma3, dbeta3 = self.bn3.backward(d_lrelu3)
@@ -75,11 +84,12 @@ class Discriminator:
         # d(Conv3)
         dx3, dW3, db3 = self.conv3.backward(dx_bn3)
 
-        # WARSTWA 2: LeakyReLU -> BN2 -> Conv2
+        # WARSTWA 2: Dropout -> LeakyReLU -> BN2 -> Conv2
         out2_bn  = self.cache['out2_bn']   # PRZED LeakyReLU
-        out2_conv = self.cache['out2_conv']
+        out2_drop = self.cache['out2_drop']
 
-        d_lrelu2 = dx3 * leaky_relu_derivative(out2_bn, 0.2)
+        d_drop2 = self.dropout2.backward(dx3)
+        d_lrelu2 = d_drop2 * leaky_relu_derivative(out2_bn, 0.2)
         dx_bn2, dgamma2, dbeta2 = self.bn2.backward(d_lrelu2)
 
         dx2, dW2, db2 = self.conv2.backward(dx_bn2)
